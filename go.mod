@@ -1,5 +1,5 @@
 module github.com/lu-zhengda/liteoauthllm
 
-go 1.26.1
+go 1.23
 
 require gopkg.in/yaml.v3 v3.0.1 // indirect
