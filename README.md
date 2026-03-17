@@ -1,5 +1,9 @@
 # liteoauthllm
 
+[![CI](https://github.com/lu-zhengda/liteoauthllm/actions/workflows/ci.yml/badge.svg)](https://github.com/lu-zhengda/liteoauthllm/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lu-zhengda/liteoauthllm)](https://goreportcard.com/report/github.com/lu-zhengda/liteoauthllm)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A lightweight local AI gateway proxy that uses ChatGPT or Claude subscription OAuth to proxy requests to OpenAI and Anthropic APIs.
 
 ## Quick Start
