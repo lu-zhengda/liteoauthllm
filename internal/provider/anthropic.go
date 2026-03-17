@@ -1,0 +1,91 @@
+package provider
+
+import (
+	"net/http"
+	"strings"
+)
+
+const (
+	anthropicDefaultVersion = "2023-06-01"
+	// anthropicOAuthBeta is required when authenticating with setup-tokens via Bearer auth.
+	// Without this header, the API returns "OAuth authentication is currently not supported."
+	anthropicOAuthBeta = "oauth-2025-04-20"
+)
+
+// Anthropic forwards requests to api.anthropic.com using Bearer auth with setup-tokens.
+type Anthropic struct{}
+
+// NewAnthropic returns a new Anthropic provider.
+func NewAnthropic() *Anthropic {
+	return &Anthropic{}
+}
+
+func (a *Anthropic) Name() string          { return "anthropic" }
+func (a *Anthropic) UpstreamHost() string   { return "api.anthropic.com" }
+func (a *Anthropic) UpstreamScheme() string { return "https" }
+
+// RewritePath returns the path as-is — Anthropic API paths don't need rewriting.
+func (a *Anthropic) RewritePath(path string) string { return path }
+
+// InjectHeaders sets required Anthropic API headers for setup-token auth:
+//   - Authorization: Bearer <setup-token>
+//   - anthropic-version: defaults to 2023-06-01 if not already set
+//   - anthropic-beta: injects oauth-2025-04-20 (required for Bearer auth) and
+//     filters out context-1m-2025-08-07 (rejected with OAuth tokens)
+//
+// Mutation is intentional: follows the standard Go reverse proxy pattern.
+func (a *Anthropic) InjectHeaders(req *http.Request, token string) {
+	// Delete any client-sent x-api-key (SDK sends a dummy key) since setup-tokens
+	// are rejected via x-api-key — only Bearer auth works for them.
+	req.Header.Del("x-api-key")
+	// Setup-tokens require Bearer auth + the oauth beta header
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if req.Header.Get("anthropic-version") == "" {
+		req.Header.Set("anthropic-version", anthropicDefaultVersion)
+	}
+
+	// Merge the required oauth beta with any client-sent betas,
+	// filtering out disallowed values like context-1m
+	existingBeta := req.Header.Get("anthropic-beta")
+	merged := mergeAnthropicBetas(existingBeta, anthropicOAuthBeta)
+	req.Header.Set("anthropic-beta", merged)
+}
+
+// mergeAnthropicBetas combines required betas with existing client-sent betas,
+// deduplicating and filtering out disallowed values (context-1m-2025-08-07).
+func mergeAnthropicBetas(existing, required string) string {
+	disallowed := map[string]bool{"context-1m-2025-08-07": true}
+	seen := map[string]bool{}
+	var result []string
+
+	for _, b := range splitBetas(required) {
+		if !disallowed[b] && !seen[b] {
+			seen[b] = true
+			result = append(result, b)
+		}
+	}
+	for _, b := range splitBetas(existing) {
+		if !disallowed[b] && !seen[b] {
+			seen[b] = true
+			result = append(result, b)
+		}
+	}
+
+	return strings.Join(result, ",")
+}
+
+// splitBetas splits a comma-separated beta string into trimmed, non-empty tokens.
+func splitBetas(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, b := range strings.Split(s, ",") {
+		b = strings.TrimSpace(b)
+		if b != "" {
+			out = append(out, b)
+		}
+	}
+	return out
+}

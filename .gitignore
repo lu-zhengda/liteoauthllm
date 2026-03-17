@@ -1,0 +1,11 @@
+liteoauthllm
+*.exe
+*.lock
+.DS_Store
+docs/
+plans/
+test/
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
