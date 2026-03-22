@@ -1,10 +1,14 @@
 package provider
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+const testAnthropicClaudeCodeIdentity = "You are Claude Code, Anthropic's official CLI for Claude."
 
 func TestResolveUnambiguousRoutes(t *testing.T) {
 	reg := NewRegistry()
@@ -138,6 +142,82 @@ func TestAnthropicInjectHeadersPreservesExistingVersion(t *testing.T) {
 	version := req.Header.Get("anthropic-version")
 	if version != "2024-01-01" {
 		t.Errorf("expected existing version preserved, got %s", version)
+	}
+}
+
+func TestAnthropicInjectHeadersAddsClaudeCodeSystemIdentityWhenMissing(t *testing.T) {
+	p := NewAnthropic()
+	req, _ := http.NewRequest(
+		"POST",
+		"http://localhost/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	p.InjectHeaders(req, "sk-ant-oat01-test-token")
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("reading rewritten body: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decoding rewritten body: %v", err)
+	}
+
+	system, ok := payload["system"].(string)
+	if !ok {
+		t.Fatalf("expected system string, got %#v", payload["system"])
+	}
+	if system != testAnthropicClaudeCodeIdentity {
+		t.Fatalf("expected Claude Code identity %q, got %q", testAnthropicClaudeCodeIdentity, system)
+	}
+}
+
+func TestAnthropicInjectHeadersPrependsClaudeCodeSystemIdentity(t *testing.T) {
+	p := NewAnthropic()
+	req, _ := http.NewRequest(
+		"POST",
+		"http://localhost/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-6","system":"You are helpful.","messages":[{"role":"user","content":"hi"}]}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	p.InjectHeaders(req, "sk-ant-oat01-test-token")
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("reading rewritten body: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decoding rewritten body: %v", err)
+	}
+
+	system, ok := payload["system"].([]interface{})
+	if !ok {
+		t.Fatalf("expected system array, got %#v", payload["system"])
+	}
+	if len(system) != 2 {
+		t.Fatalf("expected 2 system blocks, got %d", len(system))
+	}
+
+	first, ok := system[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected first system block object, got %#v", system[0])
+	}
+	if first["type"] != "text" || first["text"] != testAnthropicClaudeCodeIdentity {
+		t.Fatalf("expected first system block to be Claude Code identity, got %#v", first)
+	}
+
+	second, ok := system[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected second system block object, got %#v", system[1])
+	}
+	if second["type"] != "text" || second["text"] != "You are helpful." {
+		t.Fatalf("expected second system block to preserve user system, got %#v", second)
 	}
 }
 
