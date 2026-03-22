@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -113,6 +114,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		// FlushInterval -1 enables immediate flushing for SSE streaming responses.
 		FlushInterval: -1,
+		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, err error) {
+			// Client disconnects (context canceled / deadline exceeded) are
+			// normal in eval pipelines and streaming — suppress the noisy
+			// default "http: proxy error" log line.
+			if req.Context().Err() != nil || err == context.Canceled {
+				return
+			}
+			log.Printf("proxy error: %s %s %s: %v", req.Method, req.URL.Path, name, err)
+			rw.WriteHeader(http.StatusBadGateway)
+		},
 	}
 
 	if s.verbose {
